@@ -2,14 +2,13 @@ import urllib.request
 import re
 import os
 import json
-import xml.etree.ElementTree as ET
-import xml.sax
+import lxml.etree as ET
+from datetime import *
+import math
 
 
 def formatear(texto=""):
     def claveAValor(m):
-
-        print(m)
 
         if m[0] == "<" and m[len(m) - 1] == ">":
             return ""
@@ -18,7 +17,7 @@ def formatear(texto=""):
 
             return dicc[m]
 
-        # return "FALTA VALOR " + m
+        return "FALTA VALOR " + m
 
     dicc = {}
     for i in range(65, 91):
@@ -70,6 +69,7 @@ def formatear(texto=""):
     dicc[r'"'] = ""
     dicc[r'='] = ""
     dicc[r'&'] = ""
+    dicc[r"'"] = ""
 
     return re.sub(r'\\x\w\w\\x\w\w|\\U\w{8}|\\u\w{4}|\\x\w\w|\\n|\\t|\\r|\'|\.|\"|\,|\:|\;|\||\@\w+(?=\W)|\#\w+(?=\W)|https?\S+(?=\W)|[A-Z]|\s\s|\!|\(|\)|\<\/?(\w|\s)*\>|\=|\&', lambda m: claveAValor(m.group(0)), texto)
 
@@ -82,15 +82,68 @@ def cargarRSS(RSS):
     return dict
 
 
+def ponderar(historial, palabras):
+    total = 0
+    paginas = 0
+    for fecha in historial:
+        total += len(historial[fecha])
+    print(total)
+    resultados = {}
+    for fecha in historial:
+        if(fecha not in resultados):
+            resultados[fecha] = {}
+        for titulo in historial[fecha]:
+            with urllib.request.urlopen(urllib.request.Request(historial[fecha][titulo])) as url:
+                noticia = formatear(ascii(url.read()))
+            for palabra in palabras:
+                tam = len(noticia)
+                frec = noticia.count(palabra) + titulo.count(palabra) * 2
+                if(palabra not in resultados[fecha]):
+                    resultados[fecha][palabra] = math.log(tam) * frec
+                else:
+                    resultados[fecha][palabra] += math.log(tam) * frec
+            paginas += 1
+            print(100*paginas/total, "%")
+    for fecha in resultados:
+        for palabra in resultados[fecha]:
+            print(fecha, palabra, resultados[fecha][palabra])
+
+
 def main():
-    RSS = cargarRSS("RSS.py")
+    historial = {}
+
+    forma = {}
+    forma["RSS"] = {}
+    forma["RSS"]["Items"] = "//item"
+    forma["RSS"]["Titulo"] = "./title"
+    forma["RSS"]["Fecha"] = "./pubDate"
+    forma["RSS"]["Link"] = "./link"
+    RSS = cargarRSS("RSS-.py")
+    print("Recolectando..")
     for diario in RSS:
-        for seccion in RSS[diario]:
-            print(RSS[diario][seccion])
-            with urllib.request.urlopen(urllib.request.Request(RSS[diario][seccion])) as url:
-                root = ET.parse(url).getroot()
-                print(xml.sax.parseString(url))
-                print(root.findall(".//entry"))
+        RSSitems = forma[RSS[diario]["Tipo"]]["Items"]
+        RSStitulo = forma[RSS[diario]["Tipo"]]["Titulo"]
+        RSSfecha = forma[RSS[diario]["Tipo"]]["Fecha"]
+        RSSlink = forma[RSS[diario]["Tipo"]]["Link"]
+        for seccion in RSS[diario]["Secciones"]:
+            with urllib.request.urlopen(urllib.request.Request(RSS[diario]["Secciones"][seccion])) as url:
+                tree = ET.parse(url)
+                noticias = tree.xpath(RSSitems)
+                for noticia in noticias:
+                    # print(ET.tostring(noticia, encoding='utf8',
+                    # method='xml'))
+                    fecha = datetime.strptime(noticia.find(RSSfecha).text,
+                                              "%a, %d %b %Y %H:%M:%S %z").date()
+                    titulo = ascii(noticia.find(RSStitulo).text)
+                    link = noticia.find(RSSlink).text
+                    if(fecha not in historial):
+                        historial[fecha] = {}
+                    if(titulo not in historial[fecha]):
+                        historial[fecha][titulo] = link
+    palabras = ["Clinton", "Maduro", "Artavia",
+                "Florida", "Dollar", "Macri", "Kirchner"]
+    print("Ponderando..")
+    ponderar(historial, palabras)
 
 
 if __name__ == "__main__":
