@@ -5,6 +5,8 @@ import json
 import lxml.etree as ET
 from datetime import *
 import math
+import csv
+from bs4 import BeautifulSoup
 
 
 def formatear(texto=""):
@@ -52,24 +54,10 @@ def formatear(texto=""):
     dicc[r'\xf2'] = "o"
     dicc[r'\xfa'] = "u"
 
-    dicc[r'\n'] = ""
-    dicc[r'\r'] = ""
-    dicc[r'\t'] = ""
-    dicc[r'  '] = ""
+    vacios = [r'\n',r'\r',r'\t',r'  ',r'!',r'(',r')',r'\'',r'.',r',',r':',r';',r'|',r'"',r'=',r'&',r"'"]
 
-    dicc[r'!'] = ""
-    dicc[r'('] = ""
-    dicc[r')'] = ""
-    dicc[r'\''] = ""
-    dicc[r'.'] = ""
-    dicc[r','] = ""
-    dicc[r':'] = ""
-    dicc[r';'] = ""
-    dicc[r'|'] = ""
-    dicc[r'"'] = ""
-    dicc[r'='] = ""
-    dicc[r'&'] = ""
-    dicc[r"'"] = ""
+    for item in vacios:
+        dicc[item] = ""
 
     return re.sub(r'\\x\w\w\\x\w\w|\\U\w{8}|\\u\w{4}|\\x\w\w|\\n|\\t|\\r|\'|\.|\"|\,|\:|\;|\||\@\w+(?=\W)|\#\w+(?=\W)|https?\S+(?=\W)|[A-Z]|\s\s|\!|\(|\)|\<\/?(\w|\s)*\>|\=|\&', lambda m: claveAValor(m.group(0)), texto)
 
@@ -87,14 +75,13 @@ def ponderar(historial, palabras):
     paginas = 0
     for fecha in historial:
         total += len(historial[fecha])
-    print(total)
     resultados = {}
     for fecha in historial:
         if(fecha not in resultados):
             resultados[fecha] = {}
         for titulo in historial[fecha]:
             with urllib.request.urlopen(urllib.request.Request(historial[fecha][titulo])) as url:
-                noticia = formatear(ascii(url.read()))
+                noticia = formatear(ascii(BeautifulSoup(url.read(),"html.parser").find_all("p")))
             for palabra in palabras:
                 tam = len(noticia)
                 frec = noticia.count(palabra) + titulo.count(palabra) * 2
@@ -103,10 +90,25 @@ def ponderar(historial, palabras):
                 else:
                     resultados[fecha][palabra] += math.log(tam) * frec
             paginas += 1
-            print(100*paginas/total, "%")
+            print(100 * paginas / total, "%")
+
+    return resultados
+
+
+def exportar(resultados):
+    fechas = []
     for fecha in resultados:
-        for palabra in resultados[fecha]:
-            print(fecha, palabra, resultados[fecha][palabra])
+        fechas.append(fecha)
+    fechas.sort()
+    archivo = str(datetime.now().date()) + ".txt"
+    with open(archivo,"w") as f:
+        writer = csv.writer(f)
+        for fecha in fechas:
+            for palabra in resultados[fecha]:
+                row = (fecha,palabra,resultados[fecha][palabra])
+                writer.writerow(row)
+    print("Se exporto correctamente a " + archivo)
+        
 
 
 def main():
@@ -140,10 +142,13 @@ def main():
                         historial[fecha] = {}
                     if(titulo not in historial[fecha]):
                         historial[fecha][titulo] = link
-    palabras = ["Clinton", "Maduro", "Artavia",
-                "Florida", "Dollar", "Macri", "Kirchner"]
+    with open("Palabras.txt", "r") as f:
+        palabras = f.read().split("\n")
+    print(palabras)
     print("Ponderando..")
-    ponderar(historial, palabras)
+    resultados = ponderar(historial, palabras)
+
+    exportar(resultados)
 
 
 if __name__ == "__main__":
